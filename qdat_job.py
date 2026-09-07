@@ -1,5 +1,3 @@
-"""Job QDat : calcule des metriques et ecrit un rapport JSON."""
-
 import json
 import os
 import platform
@@ -7,6 +5,7 @@ from datetime import datetime, timezone
 
 from qdat_metrics import etendue, mediane, moyenne, normaliser
 
+# jeu de mesures bidon en attendant de brancher une vraie source
 MESURES = [12.5, 7.0, 19.25, 3.5, 11.0]
 
 
@@ -21,14 +20,14 @@ def construire_rapport() -> dict:
         "mediane": mediane(MESURES),
         "etendue": etendue(MESURES),
         "normalisees": [round(v, 3) for v in normaliser(MESURES)],
+        # on ne log jamais la cle elle-meme, juste de quoi verifier qu'elle passe
         "cle_api_presente": bool(cle),
         "cle_api_longueur": len(cle),
     }
 
 
 def main() -> None:
-    rapport = construire_rapport()
-    texte = json.dumps(rapport, indent=2, ensure_ascii=False)
+    texte = json.dumps(construire_rapport(), indent=2, ensure_ascii=False)
     print(texte)
     with open("rapport.json", "w", encoding="utf-8") as fichier:
         fichier.write(texte + "\n")

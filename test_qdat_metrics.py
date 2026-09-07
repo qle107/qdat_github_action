@@ -33,6 +33,7 @@ class TestNormaliser(unittest.TestCase):
         self.assertEqual(normaliser([10, 20, 30]), [0.0, 0.5, 1.0])
 
     def test_normaliser_constante(self):
+        # cas chiant : min == max, il ne faut pas diviser par zero
         self.assertEqual(normaliser([5, 5, 5]), [0.0, 0.0, 0.0])
 
 
