@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+password.txt
+result.txt
+rapport.json

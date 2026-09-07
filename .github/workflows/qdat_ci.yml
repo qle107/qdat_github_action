@@ -1,0 +1,105 @@
+name: qdat_ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: qdat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Tests unitaires (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - name: Recuperation du code
+        uses: actions/checkout@v6
+
+      - name: Installation de Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Compilation syntaxique
+        run: python -m compileall -q .
+
+      - name: Tests unitaires
+        run: python -m unittest discover -s . -p "test_*.py" -v
+
+  rapport:
+    name: Generation du rapport
+    runs-on: ubuntu-latest
+    needs: tests
+    timeout-minutes: 10
+    steps:
+      - name: Recuperation du code
+        uses: actions/checkout@v6
+
+      - name: Installation de Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Execution du job QDat
+        run: python qdat_job.py
+        env:
+          SECRET_API_KEY: ${{ secrets.SECRET_API_KEY }}
+
+      - name: Publication du rapport
+        uses: actions/upload-artifact@v4
+        with:
+          name: qdat-rapport-${{ github.run_number }}
+          path: rapport.json
+          if-no-files-found: error
+
+  deploiement:
+    name: Deploiement sur le serveur QDat
+    runs-on: ubuntu-latest
+    needs: [tests, rapport]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - name: Recuperation du code
+        uses: actions/checkout@v6
+
+      - name: Preparation de la confiance SSH
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          chmod 600 ~/.ssh/known_hosts
+        env:
+          SSH_HOST: ${{ vars.SSH_HOST }}
+
+      - name: Envoi des fichiers vers ~/QDat/
+        run: |
+          set -euo pipefail
+          sshpass -e ssh "$SSH_USER@$SSH_HOST" 'mkdir -p ~/QDat'
+          sshpass -e scp qdat_metrics.py qdat_job.py test_qdat_metrics.py \
+            "$SSH_USER@$SSH_HOST:~/QDat/"
+        env:
+          SSH_HOST: ${{ vars.SSH_HOST }}
+          SSH_USER: ${{ vars.SSH_USER || 'ubuntu' }}
+          SSHPASS: ${{ secrets.SSH_PASSWORD }}
+
+      - name: Verification post-deploiement (tests joues sur le serveur)
+        run: |
+          set -euo pipefail
+          sshpass -e ssh "$SSH_USER@$SSH_HOST" \
+            'cd ~/QDat && python3 -m unittest discover -s . -p "test_qdat_*.py" -v'
+        env:
+          SSH_HOST: ${{ vars.SSH_HOST }}
+          SSH_USER: ${{ vars.SSH_USER || 'ubuntu' }}
+          SSHPASS: ${{ secrets.SSH_PASSWORD }}
+
+      - name: Resume
+        run: echo "Deploiement OK sur ${{ vars.SSH_HOST }} (commit ${{ github.sha }})"
